@@ -1,0 +1,51 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Helper functions for domain authorization & security
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    // Verify email ends with official domain @hbplus.fit
+    function isHbPlusEmail() {
+      return isAuthenticated() &&
+             request.auth.token.email != null &&
+             request.auth.token.email.matches('.*@hbplus[.]fit$');
+    }
+
+    // Check if the user has admin role either via token custom claims or Firestore profile
+    function isAdmin() {
+      return isHbPlusEmail() && (
+        request.auth.token.admin == true ||
+        (exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
+         get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin')
+      );
+    }
+
+    // Users collection rules
+    match /users/{userId} {
+      // Any authenticated user from @hbplus.fit can read team member profiles
+      allow read: if isHbPlusEmail();
+
+      // Users can only create or update their own profile, preserving domain integrity
+      allow create, update: if isHbPlusEmail() &&
+                               request.auth.uid == userId &&
+                               request.resource.data.email.matches('.*@hbplus[.]fit$');
+
+      // Only administrators can delete user records
+      allow delete: if isAdmin();
+    }
+
+    // Audit logs collection (records successful and rejected login attempts)
+    match /audit_logs/{logId} {
+      allow read: if isAdmin();
+      allow create: if isHbPlusEmail();
+    }
+
+    // Deny all other access by default
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

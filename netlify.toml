@@ -1,0 +1,19 @@
+# Netlify Configuration for HB+ Fit React Native Web Application
+[build]
+  publish = "dist"
+  command = "npm run build:web"
+
+# Single-page application redirect rule for direct URLs
+[[redirects]]
+  from = "/*"
+  to = "/index.html"
+  status = 200
+
+# Security Headers
+[[headers]]
+  for = "/*"
+  [headers.values]
+    X-Frame-Options = "DENY"
+    X-Content-Type-Options = "nosniff"
+    Referrer-Policy = "strict-origin-when-cross-origin"
+    Permissions-Policy = "camera=(), microphone=(), geolocation=()"
