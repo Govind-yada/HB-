@@ -1,23 +1,25 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, Platform, FlatList } from 'react-native';
-import { colors } from '../theme/colors';
+import { StyleSheet } from 'react-native';
 import { Card } from './Card';
-import { Badge } from './Badge';
-import { Avatar } from './Avatar';
-import { UserProfile } from '../types/auth';
-import { fetchAllHbPlusUsers } from '../services/firestoreService';
-import { useResponsive } from '../hooks/useResponsive';
+import { UserProfile, UserRole } from '../types/auth';
+import { fetchAllHbPlusUsers, updateUserRole, logAuditEvent } from '../services/firestoreService';
+import { useAuth } from '../hooks/useAuth';
+import { useToast } from '../hooks/useToast';
+import { AdminHeader } from './admin/AdminHeader';
+import { AdminMetricsGrid } from './admin/AdminMetricsGrid';
+import { SecurityRuleChecklist } from './admin/SecurityRuleChecklist';
+import { TeamDirectoryTable } from './admin/TeamDirectoryTable';
+import { AuditLogViewer } from './admin/AuditLogViewer';
 
 interface AdminPanelProps {
   currentUser: UserProfile;
 }
 
 export const AdminPanel: React.FC<AdminPanelProps> = ({ currentUser }) => {
-  const { isMobile } = useResponsive();
+  const { auditLogs } = useAuth();
+  const { showSuccess, showError } = useToast();
   const [users, setUsers] = useState<UserProfile[]>([]);
-  const [loading, setLoading] = useState<boolean>(true);
 
-  // Sample seed members if Firestore collection is fresh
   const defaultTeamMembers: UserProfile[] = [
     {
       uid: currentUser.uid,
@@ -73,14 +75,8 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ currentUser }) => {
             setUsers(defaultTeamMembers);
           }
         }
-      } catch (err) {
-        if (isMounted) {
-          setUsers(defaultTeamMembers);
-        }
-      } finally {
-        if (isMounted) {
-          setLoading(false);
-        }
+      } catch {
+        if (isMounted) setUsers(defaultTeamMembers);
       }
     };
 
@@ -90,99 +86,48 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ currentUser }) => {
     };
   }, []);
 
+  const handleRoleUpdate = async (targetUid: string, newRole: UserRole) => {
+    try {
+      await updateUserRole(targetUid, newRole);
+      setUsers((prev) =>
+        prev.map((u) => (u.uid === targetUid ? { ...u, role: newRole } : u))
+      );
+      const targetUser = users.find((u) => u.uid === targetUid);
+      const targetEmail = targetUser?.email || targetUid;
+      await logAuditEvent(targetEmail, 'ROLE_UPDATED', `Role updated to ${newRole.toUpperCase()}`);
+      showSuccess(`Updated role to ${newRole.toUpperCase()} for ${targetEmail}`);
+    } catch (err: any) {
+      showError(err.message || 'Failed to update role');
+    }
+  };
+
+  const adminCount = users.filter((u) => u.role === 'admin').length;
+
   return (
     <Card style={styles.container}>
-      {/* Admin Panel Header */}
-      <View style={styles.headerRow}>
-        <View style={styles.titleBadge}>
-          <Text style={styles.titleBadgeText}>ADMIN PRIVILEGES ACTIVE</Text>
-        </View>
-        <Text style={styles.headerTitle}>Domain Management & Security Console</Text>
-        <Text style={styles.headerSubtitle}>
-          Real-time oversight for users authenticated with the official <Text style={styles.domainHighlight}>@hbplus.fit</Text> domain.
-        </Text>
-      </View>
+      {/* 1. Header */}
+      <AdminHeader />
 
-      {/* Metrics Row */}
-      <View style={[styles.statsRow, isMobile && styles.statsRowMobile]}>
-        <View style={styles.statCard}>
-          <Text style={styles.statNumber}>{users.length}</Text>
-          <Text style={styles.statLabel}>Verified Members</Text>
-        </View>
+      {/* 2. Metrics Grid */}
+      <AdminMetricsGrid
+        totalMembers={users.length}
+        adminCount={adminCount}
+        complianceRate="100%"
+        breachCount={0}
+      />
 
-        <View style={styles.statCard}>
-          <Text style={[styles.statNumber, { color: colors.adminBadgeText }]}>2</Text>
-          <Text style={styles.statLabel}>Security Admins</Text>
-        </View>
+      {/* 3. Security Rule Checklist */}
+      <SecurityRuleChecklist />
 
-        <View style={styles.statCard}>
-          <Text style={[styles.statNumber, { color: colors.success }]}>100%</Text>
-          <Text style={styles.statLabel}>Domain Compliance</Text>
-        </View>
+      {/* 4. Directory Table */}
+      <TeamDirectoryTable
+        users={users}
+        currentUserId={currentUser.uid}
+        onRoleUpdate={handleRoleUpdate}
+      />
 
-        <View style={styles.statCard}>
-          <Text style={[styles.statNumber, { color: colors.info }]}>0</Text>
-          <Text style={styles.statLabel}>Unauthorized Breaches</Text>
-        </View>
-      </View>
-
-      {/* Security Enforcement Card */}
-      <View style={styles.securityBox}>
-        <Text style={styles.securityTitle}>🛡 Active Domain Authorization Rules</Text>
-        <Text style={styles.securityRule}>
-          • <Text style={styles.bold}>Frontend Guard:</Text> OAuth callback immediately signs out and purges any email not ending in @hbplus.fit.
-        </Text>
-        <Text style={styles.securityRule}>
-          • <Text style={styles.bold}>Firestore Guard:</Text> <Text style={styles.mono}>request.auth.token.email.matches('.*@hbplus[.]fit$')</Text> required for all document writes.
-        </Text>
-        <Text style={styles.securityRule}>
-          • <Text style={styles.bold}>Session Security:</Text> AsyncStorage / browser local session verified against domain regex on every cold start.
-        </Text>
-      </View>
-
-      {/* Member Directory */}
-      <View style={styles.directoryHeader}>
-        <Text style={styles.directoryTitle}>Registered @hbplus.fit Team Directory</Text>
-        <Text style={styles.directoryCount}>{users.length} Users Listed</Text>
-      </View>
-
-      <View style={styles.memberList}>
-        {users.map((member, idx) => (
-          <View
-            key={member.uid || idx}
-            style={[
-              styles.memberRow,
-              idx === users.length - 1 && styles.memberRowLast,
-              isMobile && styles.memberRowMobile,
-            ]}
-          >
-            <View style={styles.memberLeft}>
-              <Avatar
-                photoURL={member.photoURL}
-                name={member.displayName || member.email}
-                size={40}
-              />
-              <View style={styles.memberInfo}>
-                <Text style={styles.memberName}>
-                  {member.displayName || member.email.split('@')[0]}
-                </Text>
-                <Text style={styles.memberEmail}>{member.email}</Text>
-              </View>
-            </View>
-
-            <View style={[styles.memberRight, isMobile && styles.memberRightMobile]}>
-              <Badge
-                label={member.role === 'admin' ? 'ADMIN' : 'MEMBER'}
-                variant={member.role === 'admin' ? 'admin' : 'user'}
-                size="sm"
-              />
-              <Text style={styles.memberUid}>
-                {member.uid.length > 12 ? `${member.uid.slice(0, 10)}...` : member.uid}
-              </Text>
-            </View>
-          </View>
-        ))}
-      </View>
+      {/* 5. Live Audit Log Viewer */}
+      <AuditLogViewer logs={auditLogs} />
     </Card>
   );
 };
@@ -193,166 +138,5 @@ const styles = StyleSheet.create({
     marginTop: 20,
     borderColor: 'rgba(168, 85, 247, 0.3)',
     borderWidth: 1.5,
-  },
-  headerRow: {
-    marginBottom: 20,
-  },
-  titleBadge: {
-    backgroundColor: colors.adminBadgeBg,
-    borderColor: colors.adminBadgeBorder,
-    borderWidth: 1,
-    borderRadius: 6,
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-    alignSelf: 'flex-start',
-    marginBottom: 8,
-  },
-  titleBadgeText: {
-    color: colors.adminBadgeText,
-    fontSize: 11,
-    fontWeight: '800',
-    letterSpacing: 0.5,
-  },
-  headerTitle: {
-    fontSize: 20,
-    fontWeight: '800',
-    color: colors.textPrimary,
-    marginBottom: 4,
-  },
-  headerSubtitle: {
-    fontSize: 14,
-    color: colors.textSecondary,
-    lineHeight: 20,
-  },
-  domainHighlight: {
-    color: colors.adminBadgeText,
-    fontWeight: '700',
-  },
-  statsRow: {
-    flexDirection: 'row',
-    gap: 12,
-    marginBottom: 20,
-  },
-  statsRowMobile: {
-    flexWrap: 'wrap',
-  },
-  statCard: {
-    flex: 1,
-    minWidth: 120,
-    backgroundColor: colors.surfaceSecondary,
-    borderRadius: 10,
-    padding: 14,
-    borderWidth: 1,
-    borderColor: colors.cardBorder,
-  },
-  statNumber: {
-    fontSize: 22,
-    fontWeight: '800',
-    color: colors.textPrimary,
-    marginBottom: 2,
-  },
-  statLabel: {
-    fontSize: 12,
-    color: colors.textMuted,
-    fontWeight: '600',
-  },
-  securityBox: {
-    backgroundColor: 'rgba(15, 23, 42, 0.7)',
-    borderRadius: 10,
-    borderWidth: 1,
-    borderColor: 'rgba(56, 189, 248, 0.2)',
-    padding: 16,
-    marginBottom: 20,
-  },
-  securityTitle: {
-    color: colors.info,
-    fontSize: 14,
-    fontWeight: '700',
-    marginBottom: 8,
-  },
-  securityRule: {
-    color: colors.textSecondary,
-    fontSize: 13,
-    lineHeight: 19,
-    marginBottom: 6,
-  },
-  bold: {
-    color: colors.textPrimary,
-    fontWeight: '700',
-  },
-  mono: {
-    fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace',
-    color: '#38BDF8',
-  },
-  directoryHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 12,
-    marginTop: 6,
-  },
-  directoryTitle: {
-    fontSize: 16,
-    fontWeight: '700',
-    color: colors.textPrimary,
-  },
-  directoryCount: {
-    fontSize: 13,
-    color: colors.textMuted,
-  },
-  memberList: {
-    backgroundColor: colors.surfaceSecondary,
-    borderRadius: 10,
-    borderWidth: 1,
-    borderColor: colors.cardBorder,
-    overflow: 'hidden',
-  },
-  memberRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    padding: 14,
-    borderBottomWidth: 1,
-    borderBottomColor: colors.cardBorder,
-  },
-  memberRowLast: {
-    borderBottomWidth: 0,
-  },
-  memberRowMobile: {
-    flexDirection: 'column',
-    alignItems: 'flex-start',
-    gap: 8,
-  },
-  memberLeft: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
-  },
-  memberInfo: {
-    justifyContent: 'center',
-  },
-  memberName: {
-    color: colors.textPrimary,
-    fontSize: 14,
-    fontWeight: '600',
-  },
-  memberEmail: {
-    color: colors.textSecondary,
-    fontSize: 12,
-  },
-  memberRight: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
-  },
-  memberRightMobile: {
-    width: '100%',
-    justifyContent: 'space-between',
-    paddingLeft: 52,
-  },
-  memberUid: {
-    color: colors.textMuted,
-    fontSize: 12,
-    fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace',
   },
 });

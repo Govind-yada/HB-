@@ -2,6 +2,7 @@ import React from 'react';
 import { View, Text, StyleSheet, Platform } from 'react-native';
 import { colors } from '../theme/colors';
 import { Card } from './Card';
+import { DiagnosticItem } from './session/DiagnosticItem';
 import { ALLOWED_DOMAIN } from '../config/constants';
 import { useResponsive } from '../hooks/useResponsive';
 
@@ -16,6 +17,9 @@ export const SessionDetailsCard: React.FC<SessionDetailsCardProps> = ({
 }) => {
   const { isMobile } = useResponsive();
 
+  const persistenceType =
+    Platform.OS === 'web' ? 'IndexedDB / Browser Local' : 'Encrypted AsyncStorage';
+
   return (
     <Card style={styles.card}>
       <Text style={styles.cardTitle}>🔐 Session & Security Diagnostics</Text>
@@ -24,33 +28,27 @@ export const SessionDetailsCard: React.FC<SessionDetailsCardProps> = ({
       </Text>
 
       <View style={[styles.grid, isMobile && styles.gridMobile]}>
-        <View style={styles.gridItem}>
-          <Text style={styles.itemLabel}>Domain Whitelist</Text>
-          <View style={styles.statusRow}>
-            <Text style={styles.statusDot}>●</Text>
-            <Text style={styles.itemValue}>{ALLOWED_DOMAIN} (Strict)</Text>
-          </View>
-        </View>
+        <DiagnosticItem
+          label="Domain Whitelist"
+          value={`${ALLOWED_DOMAIN} (Strict)`}
+          statusDotColor={colors.info}
+        />
 
-        <View style={styles.gridItem}>
-          <Text style={styles.itemLabel}>Session Persistence</Text>
-          <Text style={styles.itemValue}>
-            {Platform.OS === 'web' ? 'IndexedDB / Browser Local' : 'Encrypted AsyncStorage'}
-          </Text>
-        </View>
+        <DiagnosticItem
+          label="Session Persistence"
+          value={persistenceType}
+        />
 
-        <View style={styles.gridItem}>
-          <Text style={styles.itemLabel}>OAuth Handshake</Text>
-          <Text style={styles.itemValue}>{providerId} (OAuth 2.0)</Text>
-        </View>
+        <DiagnosticItem
+          label="OAuth Handshake"
+          value={`${providerId} (OAuth 2.0 PKCE)`}
+        />
 
-        <View style={styles.gridItem}>
-          <Text style={styles.itemLabel}>Direct URL Protection</Text>
-          <View style={styles.statusRow}>
-            <Text style={[styles.statusDot, { color: colors.success }]}>●</Text>
-            <Text style={styles.itemValue}>Active (AuthGuard Shield)</Text>
-          </View>
-        </View>
+        <DiagnosticItem
+          label="Direct URL Protection"
+          value="Active (AuthGuard Shield)"
+          statusDotColor={colors.success}
+        />
       </View>
     </Card>
   );
@@ -76,36 +74,8 @@ const styles = StyleSheet.create({
   grid: {
     flexDirection: 'row',
     flexWrap: 'wrap',
-    rowGap: 14,
   },
   gridMobile: {
     flexDirection: 'column',
-    rowGap: 12,
-  },
-  gridItem: {
-    width: '50%',
-    paddingRight: 10,
-  },
-  itemLabel: {
-    fontSize: 11,
-    color: colors.textMuted,
-    fontWeight: '700',
-    textTransform: 'uppercase',
-    letterSpacing: 0.5,
-    marginBottom: 2,
-  },
-  itemValue: {
-    fontSize: 13,
-    color: colors.textPrimary,
-    fontWeight: '600',
-  },
-  statusRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-  },
-  statusDot: {
-    color: colors.info,
-    fontSize: 10,
   },
 });

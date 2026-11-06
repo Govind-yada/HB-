@@ -38,53 +38,88 @@ This application implements corporate single sign-on (SSO) with **Google OAuth 2
    - Includes custom 4-color Google Sign-In button, avatars with initials fallback, and status badges.
 9. **Interactive Verification Lab**:
    - Embedded interactive testing panel directly on the login screen to verify accepted domains, admin permissions, and exact domain rejection error behavior without requiring live Google Cloud configuration upfront.
+10. **Complementary Enterprise Features**:
+   - **`ErrorBoundary`**: Graceful crash prevention with friendly retry mechanism.
+   - **`ToastProvider`**: Slick, animated non-blocking notifications for authentication events and role changes.
+   - **`RoleGuard`**: Declarative RBAC authorization component.
+   - **`AuditLogViewer`**: Real-time domain access event tracking (Granted, Blocked, Logout, Role Changes).
+   - **`RoleUpdateModal`**: Interactive admin dialog allowing one-click promotion/demotion of team members.
 
 ---
 
-## 📁 Project Structure
+## 📁 Project Structure & Decomposed Components
 
 ```text
 hbplus-auth-app/
-├── assets/                       # App icons, adaptive splash screens, favicon
+├── assets/                          # App icons, adaptive splash screens, favicon
 ├── src/
-│   ├── components/               # Modular reusable UI components
-│   │   ├── AlertBox.tsx          # Error banners and exact domain rejection alert
-│   │   ├── Avatar.tsx            # Profile picture with initials fallback
-│   │   ├── Badge.tsx             # Role (Admin/User) and domain status badges
-│   │   ├── Card.tsx              # Elevated responsive container cards
-│   │   ├── GoogleSignInButton.tsx# Official branded 4-color Google sign-in button
-│   │   ├── Navbar.tsx            # Responsive header with branding and user logout
-│   │   ├── UserProfileCard.tsx   # Displays name, email, photo, UID, role
-│   │   ├── AdminPanel.tsx        # Admin-only team directory and domain oversight
-│   │   └── SessionDetailsCard.tsx# Token and session diagnostic metrics
+│   ├── components/
+│   │   ├── common/                  # Modular Primitive & Utility Components
+│   │   │   ├── AlertBox.tsx         # Domain rejection alert & error banners
+│   │   │   ├── Avatar.tsx           # Profile picture with fallback initials
+│   │   │   ├── Badge.tsx            # Role & Domain Verified status badges
+│   │   │   ├── Card.tsx             # Responsive elevated container cards
+│   │   │   ├── ErrorBoundary.tsx    # Crash containment with retry handler
+│   │   │   ├── LoadingOverlay.tsx   # Branded full-screen activity spinner
+│   │   │   ├── RoleGuard.tsx        # Declarative RBAC authorization gate
+│   │   │   └── Toast.tsx            # Animated notification toast cards
+│   │   ├── login/                   # Decomposed Login Screen Components
+│   │   │   ├── BrandHeader.tsx      # HB+ logo pill, title, and tagline
+│   │   │   ├── DomainSecurityBanner.tsx # Whitelist domain notice with lock icon
+│   │   │   └── VerificationLab.tsx  # Interactive domain rejection & role testing
+│   │   ├── dashboard/               # Decomposed Dashboard Screen Components
+│   │   │   ├── WelcomeBanner.tsx    # Personal greeting, refresh data & signout
+│   │   │   ├── QuickMetricsBar.tsx  # Security status, domain & role cards
+│   │   │   └── AthleteHub.tsx       # Standard user athletic programs & biometrics
+│   │   ├── profile/                 # Decomposed Profile Components
+│   │   │   ├── ProfileHeader.tsx    # Avatar, verification tag, role badges
+│   │   │   └── ProfileDetailItem.tsx# Single attribute with monospace UID support
+│   │   ├── admin/                   # Decomposed Admin Console Components
+│   │   │   ├── AdminHeader.tsx      # Admin privileges badge & description
+│   │   │   ├── AdminMetricsGrid.tsx # 4 quick stat cards (Members, Admins, Compliance)
+│   │   │   ├── SecurityRuleChecklist.tsx # Authorization rules & guard summary
+│   │   │   ├── TeamMemberRow.tsx    # Single directory row with promote/demote action
+│   │   │   ├── TeamDirectoryTable.tsx # Filterable team table with search & modal
+│   │   │   ├── AuditLogViewer.tsx   # Live domain access logs (Granted/Blocked)
+│   │   │   └── RoleUpdateModal.tsx  # Confirmation modal for changing member roles
+│   │   ├── session/                 # Decomposed Session Diagnostics
+│   │   │   └── DiagnosticItem.tsx   # Single diagnostic attribute with status dot
+│   │   ├── GoogleSignInButton.tsx   # Official branded 4-color Google sign-in button
+│   │   ├── Navbar.tsx               # Responsive header with BrandLogo & UserNavMenu
+│   │   ├── UserProfileCard.tsx      # Main composite profile card
+│   │   ├── AdminPanel.tsx           # Main composite admin console
+│   │   ├── SessionDetailsCard.tsx   # Main composite session diagnostic card
+│   │   └── index.ts                 # Unified component exports
 │   ├── config/
-│   │   ├── constants.ts          # Whitelist domain (@hbplus.fit) & exact error strings
-│   │   ├── env.ts                # Environment variables and fallback validation
-│   │   └── firebase.ts           # Cross-platform Firebase Auth & Firestore init
+│   │   ├── constants.ts             # Whitelist domain (@hbplus.fit) & exact error strings
+│   │   ├── env.ts                   # Environment variables and fallback validation
+│   │   └── firebase.ts              # Cross-platform Firebase Auth & Firestore init
 │   ├── context/
-│   │   └── AuthContext.tsx       # Auth provider, onAuthStateChanged, session caching
+│   │   ├── AuthContext.tsx          # Auth provider, onAuthStateChanged, audit logging
+│   │   └── ToastContext.tsx         # Global toast notification provider
 │   ├── hooks/
-│   │   ├── useAuth.ts            # Convenience hook for authentication state & actions
-│   │   └── useResponsive.ts      # Viewport detection (isMobile, isTablet, isDesktop)
+│   │   ├── useAuth.ts               # Convenience hook for authentication state & actions
+│   │   ├── useResponsive.ts         # Viewport detection (isMobile, isTablet, isDesktop)
+│   │   └── useToast.ts              # Convenience hook for showSuccess / showError
 │   ├── navigation/
-│   │   └── Navigation.tsx        # Route guarding, direct URL security & loaders
+│   │   └── Navigation.tsx           # Route guarding, direct URL security & loaders
 │   ├── screens/
-│   │   ├── LoginScreen.tsx       # Corporate sign-in with Google & Verification Lab
-│   │   └── DashboardScreen.tsx   # Protected responsive member & admin dashboard
+│   │   ├── LoginScreen.tsx          # Composed sign-in screen
+│   │   └── DashboardScreen.tsx      # Composed protected dashboard
 │   ├── services/
-│   │   ├── authService.ts        # Domain validation, Google OAuth & immediate signout
-│   │   └── firestoreService.ts   # Firestore profile synchronization & role fetching
+│   │   ├── authService.ts           # Domain validation, Google OAuth & immediate signout
+│   │   └── firestoreService.ts      # Firestore profile sync, audit logs & role changes
 │   ├── theme/
-│   │   └── colors.ts             # Professional color tokens & status palettes
+│   │   └── colors.ts                # Professional color tokens & status palettes
 │   └── types/
-│       └── auth.ts               # TypeScript interfaces & types
-├── test-domain.js                # Automated verification script for domain security
-├── firestore.rules               # Production Firestore backend security rules
-├── netlify.toml                  # Netlify deployment build & SPA redirect config
-├── app.json                      # Expo application metadata (Web, iOS, Android)
-├── package.json                  # Dependencies and execution scripts
-├── .env.example                  # Environment configuration template
-└── App.tsx                       # Root application entry point
+│       └── auth.ts                  # TypeScript interfaces & types
+├── test-domain.js                   # Automated verification script for domain security
+├── firestore.rules                  # Production Firestore backend security rules
+├── netlify.toml                     # Netlify deployment build & SPA redirect config
+├── app.json                         # Expo application metadata (Web, iOS, Android)
+├── package.json                     # Dependencies and execution scripts
+├── .env.example                     # Environment configuration template
+└── App.tsx                          # Root application with ToastProvider & AuthProvider
 ```
 
 ---

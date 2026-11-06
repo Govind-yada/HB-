@@ -1,18 +1,23 @@
 import React, { useEffect } from 'react';
-import { View, Text, ActivityIndicator, StyleSheet, Platform } from 'react-native';
+import { Platform } from 'react-native';
 import { useAuth } from '../hooks/useAuth';
 import { LoginScreen } from '../screens/LoginScreen';
 import { DashboardScreen } from '../screens/DashboardScreen';
-import { colors } from '../theme/colors';
-import { APP_NAME } from '../config/constants';
+import { LoadingOverlay } from '../components/common/LoadingOverlay';
+import { ErrorBoundary } from '../components/common/ErrorBoundary';
 
 export const Navigation: React.FC = () => {
   const { user, isLoading } = useAuth();
 
   // Web direct URL route protection (Requirement 9)
+  // FIXED: Do not prematurely redirect while initial session is still restoring!
   useEffect(() => {
     if (Platform.OS !== 'web' || typeof window === 'undefined') {
       return;
+    }
+
+    if (isLoading) {
+      return; // Wait until initial AsyncStorage / Firebase auth check concludes!
     }
 
     const enforceWebRouteSecurity = () => {
@@ -34,72 +39,21 @@ export const Navigation: React.FC = () => {
 
     enforceWebRouteSecurity();
 
-    // Listen to browser forward/back buttons
     window.addEventListener('popstate', enforceWebRouteSecurity);
     return () => {
       window.removeEventListener('popstate', enforceWebRouteSecurity);
     };
-  }, [user]);
+  }, [user, isLoading]);
 
   // Loading state with branded indicator
   if (isLoading) {
-    return (
-      <View style={styles.loadingContainer}>
-        <View style={styles.logoPill}>
-          <Text style={styles.logoPillText}>HB+</Text>
-        </View>
-        <Text style={styles.appName}>{APP_NAME}</Text>
-        <ActivityIndicator size="large" color={colors.primary} style={styles.spinner} />
-        <Text style={styles.loadingText}>Verifying domain session & security credentials...</Text>
-      </View>
-    );
+    return <LoadingOverlay />;
   }
 
-  // Protected Route Guard (Requirement 5 & 9)
-  // If user is null or email domain is unverified, strictly show LoginScreen
-  if (!user) {
-    return <LoginScreen />;
-  }
-
-  // Authorized user present: grant access to DashboardScreen
-  return <DashboardScreen />;
+  // Protected Route Guard (Requirements 5 & 9)
+  return (
+    <ErrorBoundary fallbackTitle="Application Error">
+      {!user ? <LoginScreen /> : <DashboardScreen />}
+    </ErrorBoundary>
+  );
 };
-
-const styles = StyleSheet.create({
-  loadingContainer: {
-    flex: 1,
-    backgroundColor: colors.background,
-    alignItems: 'center',
-    justifyContent: 'center',
-    padding: 24,
-  },
-  logoPill: {
-    backgroundColor: colors.primary,
-    borderRadius: 14,
-    paddingHorizontal: 20,
-    paddingVertical: 12,
-    marginBottom: 16,
-  },
-  logoPillText: {
-    color: colors.white,
-    fontSize: 26,
-    fontWeight: '900',
-    letterSpacing: 1,
-  },
-  appName: {
-    color: colors.textPrimary,
-    fontSize: 22,
-    fontWeight: '800',
-    marginBottom: 24,
-    letterSpacing: 0.5,
-  },
-  spinner: {
-    marginBottom: 16,
-  },
-  loadingText: {
-    color: colors.textSecondary,
-    fontSize: 14,
-    fontWeight: '500',
-    textAlign: 'center',
-  },
-});

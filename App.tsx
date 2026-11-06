@@ -2,6 +2,7 @@ import React from 'react';
 import { StatusBar } from 'expo-status-bar';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { AuthProvider } from './src/context/AuthContext';
+import { ToastProvider } from './src/context/ToastContext';
 import { Navigation } from './src/navigation/Navigation';
 
 export default function App() {
@@ -9,7 +10,9 @@ export default function App() {
     <SafeAreaProvider>
       <StatusBar style="light" />
       <AuthProvider>
-        <Navigation />
+        <ToastProvider>
+          <Navigation />
+        </ToastProvider>
       </AuthProvider>
     </SafeAreaProvider>
   );

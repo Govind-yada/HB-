@@ -12,6 +12,22 @@ export interface UserProfile {
   providerId?: string;
 }
 
+export type AuditEventStatus =
+  | 'SUCCESS'
+  | 'REJECTED_UNAUTHORIZED_DOMAIN'
+  | 'LOGOUT'
+  | 'ROLE_UPDATED'
+  | 'SESSION_RESTORED';
+
+export interface AuditLogEntry {
+  id: string;
+  timestamp: string;
+  email: string;
+  status: AuditEventStatus;
+  details: string;
+  role?: UserRole;
+}
+
 export interface AuthContextType {
   user: UserProfile | null;
   firebaseUser: any | null;
@@ -24,6 +40,7 @@ export interface AuthContextType {
   clearError: () => void;
   isDemoMode: boolean;
   refreshUserProfile: () => Promise<void>;
+  auditLogs: AuditLogEntry[];
 }
 
 export interface ResponsiveInfo {

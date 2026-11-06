@@ -7,7 +7,6 @@ import {
   ALLOWED_DOMAIN,
   DOMAIN_RESTRICTION_ERROR,
   STORAGE_KEYS,
-  DEFAULT_ADMIN_EMAILS,
 } from '../config/constants';
 import { isConfiguredWithRealFirebase, configuredAdminEmails } from '../config/env';
 import {
@@ -16,8 +15,13 @@ import {
   signInWithGoogleWeb,
   signOutUser,
 } from '../services/authService';
-import { syncUserProfile, fetchUserProfile } from '../services/firestoreService';
-import { AuthContextType, UserProfile, UserRole } from '../types/auth';
+import {
+  syncUserProfile,
+  fetchUserProfile,
+  logAuditEvent,
+  fetchRecentAuditLogs,
+} from '../services/firestoreService';
+import { AuthContextType, UserProfile, UserRole, AuditLogEntry } from '../types/auth';
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
@@ -31,11 +35,23 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [isAuthenticating, setIsAuthenticating] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
+  const [auditLogs, setAuditLogs] = useState<AuditLogEntry[]>([]);
 
   const isDemoMode = !isConfiguredWithRealFirebase();
 
-  // Clear any existing error state
   const clearError = () => setError(null);
+
+  /**
+   * Load audit logs on start
+   */
+  const loadAuditHistory = async () => {
+    try {
+      const logs = await fetchRecentAuditLogs();
+      setAuditLogs(logs);
+    } catch {
+      // safe fallback
+    }
+  };
 
   /**
    * Restore cached session and initialize Firebase Auth listener
@@ -48,7 +64,6 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
         const cached = await AsyncStorage.getItem(STORAGE_KEYS.USER_SESSION);
         if (cached && isMounted) {
           const parsed: UserProfile = JSON.parse(cached);
-          // Verify cached user domain strictly
           if (validateHbPlusDomain(parsed.email)) {
             setUser(parsed);
           } else {
@@ -65,6 +80,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     };
 
     restoreSession();
+    loadAuditHistory();
 
     // Firebase Auth State Listener
     let unsubscribe = () => {};
@@ -78,12 +94,18 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
             // Strict Domain Validation (Requirements 2 & 3)
             if (!validateHbPlusDomain(email)) {
               console.warn(`Unauthorized domain detected: ${email}. Terminating session.`);
+              await logAuditEvent(
+                email,
+                'REJECTED_UNAUTHORIZED_DOMAIN',
+                `Attempted login with non-whitelisted domain. Expected ${ALLOWED_DOMAIN}`
+              );
               await enforceDomainOrSignOut(currentFirebaseUser);
               if (isMounted) {
                 setUser(null);
                 setFirebaseUser(null);
                 setError(DOMAIN_RESTRICTION_ERROR);
                 setIsLoading(false);
+                loadAuditHistory();
               }
               return;
             }
@@ -100,12 +122,18 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
               if (isMounted) {
                 setUser(profile);
                 await AsyncStorage.setItem(STORAGE_KEYS.USER_SESSION, JSON.stringify(profile));
+                await logAuditEvent(
+                  profile.email,
+                  'SUCCESS',
+                  'Firebase Auth token validated. Domain confirmed.',
+                  profile.role
+                );
+                loadAuditHistory();
               }
             } catch (err) {
               console.warn('Profile sync error in auth listener:', err);
             }
           } else {
-            // User signed out in Firebase
             if (isMounted && !isDemoMode) {
               setUser(null);
               setFirebaseUser(null);
@@ -140,19 +168,20 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       if (Platform.OS === 'web' && isConfiguredWithRealFirebase()) {
         const profile = await signInWithGoogleWeb();
         setUser(profile);
+        await logAuditEvent(profile.email, 'SUCCESS', 'Signed in via Google OAuth 2.0 Web popup', profile.role);
+        await loadAuditHistory();
       } else if (isDemoMode) {
         // Fallback for local testing or demo environments without real Google Cloud Client ID
-        // Provide standard employee profile
         await simulateGoogleSignIn('marcus.vance@hbplus.fit', 'Marcus Vance', 'user');
       } else {
         // Native mobile flow
-        // Standard WebBrowser or AuthSession handling
         const profile = await signInWithGoogleWeb();
         setUser(profile);
+        await logAuditEvent(profile.email, 'SUCCESS', 'Signed in via Google OAuth Mobile', profile.role);
+        await loadAuditHistory();
       }
     } catch (err: any) {
       console.error('Google Sign-In Error:', err);
-      // Ensure the exact required error string is preserved
       if (err.message === DOMAIN_RESTRICTION_ERROR || err.message?.includes('official domain email')) {
         setError(DOMAIN_RESTRICTION_ERROR);
       } else if (err.code === 'auth/popup-closed-by-user') {
@@ -177,18 +206,23 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     clearError();
     setIsAuthenticating(true);
 
-    // Simulate network delay for realistic feel
-    await new Promise((r) => setTimeout(r, 600));
+    await new Promise((r) => setTimeout(r, 450));
 
     try {
       const normalizedEmail = email.trim().toLowerCase();
 
       // 1. Strict Domain Validation (Requirements 2 & 3)
       if (!validateHbPlusDomain(normalizedEmail)) {
+        await logAuditEvent(
+          normalizedEmail,
+          'REJECTED_UNAUTHORIZED_DOMAIN',
+          `Access restricted: Domain ${normalizedEmail.split('@')[1] || 'unknown'} is not permitted.`
+        );
         await signOutUser();
         setUser(null);
         setFirebaseUser(null);
         setError(DOMAIN_RESTRICTION_ERROR);
+        await loadAuditHistory();
         throw new Error(DOMAIN_RESTRICTION_ERROR);
       }
 
@@ -216,6 +250,13 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
 
       setUser(mockProfile);
       await AsyncStorage.setItem(STORAGE_KEYS.USER_SESSION, JSON.stringify(mockProfile));
+      await logAuditEvent(
+        mockProfile.email,
+        'SUCCESS',
+        `Authenticated successfully as ${role.toUpperCase()} (@hbplus.fit)`,
+        role
+      );
+      await loadAuditHistory();
     } catch (err: any) {
       if (err.message === DOMAIN_RESTRICTION_ERROR) {
         setError(DOMAIN_RESTRICTION_ERROR);
@@ -233,11 +274,14 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
    */
   const signOut = async (): Promise<void> => {
     setIsAuthenticating(true);
+    const prevEmail = user?.email || 'authenticated user';
     try {
       await signOutUser();
       setUser(null);
       setFirebaseUser(null);
       clearError();
+      await logAuditEvent(prevEmail, 'LOGOUT', 'User signed out. Local tokens and session cleared.');
+      await loadAuditHistory();
     } catch (err: any) {
       console.warn('Sign out error:', err);
     } finally {
@@ -256,6 +300,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
         setUser(refreshed);
         await AsyncStorage.setItem(STORAGE_KEYS.USER_SESSION, JSON.stringify(refreshed));
       }
+      await loadAuditHistory();
     } catch (e) {
       console.warn('Failed to refresh profile:', e);
     }
@@ -275,6 +320,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
         clearError,
         isDemoMode,
         refreshUserProfile,
+        auditLogs,
       }}
     >
       {children}
