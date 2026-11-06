@@ -19,7 +19,7 @@ import { AthleteHub } from '../components/dashboard/AthleteHub';
 import { RoleGuard } from '../components/common/RoleGuard';
 
 export const DashboardScreen: React.FC = () => {
-  const { user, signOut, isAuthenticating, refreshUserProfile } = useAuth();
+  const { user, signOut, isLoggingOut, refreshUserProfile } = useAuth();
   const { isDesktop } = useResponsive();
   const { showSuccess, showInfo } = useToast();
   const [isRefreshing, setIsRefreshing] = useState(false);
@@ -38,8 +38,12 @@ export const DashboardScreen: React.FC = () => {
   };
 
   const handleSignOut = async () => {
-    await signOut();
-    showSuccess('You have been signed out securely.');
+    try {
+      await signOut();
+      showSuccess('You have been signed out securely.');
+    } catch {
+      // safe fallback
+    }
   };
 
   return (
@@ -59,7 +63,7 @@ export const DashboardScreen: React.FC = () => {
             onRefresh={handleRefresh}
             onSignOut={handleSignOut}
             isRefreshing={isRefreshing}
-            isAuthenticating={isAuthenticating}
+            isLoggingOut={isLoggingOut}
           />
 
           {/* 2. Security & Role Metrics */}

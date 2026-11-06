@@ -34,6 +34,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   const [firebaseUser, setFirebaseUser] = useState<FirebaseUser | null>(null);
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [isAuthenticating, setIsAuthenticating] = useState<boolean>(false);
+  const [isLoggingOut, setIsLoggingOut] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
   const [auditLogs, setAuditLogs] = useState<AuditLogEntry[]>([]);
 
@@ -42,7 +43,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   const clearError = () => setError(null);
 
   /**
-   * Load audit logs on start
+   * Load audit logs safely without blocking UI
    */
   const loadAuditHistory = async () => {
     try {
@@ -94,18 +95,18 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
             // Strict Domain Validation (Requirements 2 & 3)
             if (!validateHbPlusDomain(email)) {
               console.warn(`Unauthorized domain detected: ${email}. Terminating session.`);
-              await logAuditEvent(
+              logAuditEvent(
                 email,
                 'REJECTED_UNAUTHORIZED_DOMAIN',
-                `Attempted login with non-whitelisted domain. Expected ${ALLOWED_DOMAIN}`
-              );
+                `Attempted login with unauthorized domain. Expected ${ALLOWED_DOMAIN}`
+              ).then(() => loadAuditHistory()).catch(() => {});
+
               await enforceDomainOrSignOut(currentFirebaseUser);
               if (isMounted) {
                 setUser(null);
                 setFirebaseUser(null);
                 setError(DOMAIN_RESTRICTION_ERROR);
                 setIsLoading(false);
-                loadAuditHistory();
               }
               return;
             }
@@ -122,19 +123,18 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
               if (isMounted) {
                 setUser(profile);
                 await AsyncStorage.setItem(STORAGE_KEYS.USER_SESSION, JSON.stringify(profile));
-                await logAuditEvent(
+                logAuditEvent(
                   profile.email,
                   'SUCCESS',
                   'Firebase Auth token validated. Domain confirmed.',
                   profile.role
-                );
-                loadAuditHistory();
+                ).then(() => loadAuditHistory()).catch(() => {});
               }
             } catch (err) {
               console.warn('Profile sync error in auth listener:', err);
             }
           } else {
-            if (isMounted && !isDemoMode) {
+            if (isMounted && isConfiguredWithRealFirebase()) {
               setUser(null);
               setFirebaseUser(null);
             }
@@ -155,39 +155,46 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       isMounted = false;
       unsubscribe();
     };
-  }, [isDemoMode]);
+  }, []);
 
   /**
-   * Primary Google OAuth Sign-In
+   * Primary Google OAuth Sign-In (Directly launches Google's account selection modal)
    */
   const signInWithGoogle = async (): Promise<void> => {
     clearError();
     setIsAuthenticating(true);
 
     try {
-      if (Platform.OS === 'web' && isConfiguredWithRealFirebase()) {
-        const profile = await signInWithGoogleWeb();
-        setUser(profile);
-        await logAuditEvent(profile.email, 'SUCCESS', 'Signed in via Google OAuth 2.0 Web popup', profile.role);
-        await loadAuditHistory();
-      } else if (isDemoMode) {
-        // Fallback for local testing or demo environments without real Google Cloud Client ID
-        await simulateGoogleSignIn('marcus.vance@hbplus.fit', 'Marcus Vance', 'user');
-      } else {
-        // Native mobile flow
-        const profile = await signInWithGoogleWeb();
-        setUser(profile);
-        await logAuditEvent(profile.email, 'SUCCESS', 'Signed in via Google OAuth Mobile', profile.role);
-        await loadAuditHistory();
-      }
+      // Direct call to Google OAuth popup
+      const profile = await signInWithGoogleWeb();
+      setUser(profile);
+      logAuditEvent(profile.email, 'SUCCESS', 'Signed in via Google OAuth 2.0 Web popup', profile.role)
+        .then(() => loadAuditHistory())
+        .catch(() => {});
     } catch (err: any) {
       console.error('Google Sign-In Error:', err);
-      if (err.message === DOMAIN_RESTRICTION_ERROR || err.message?.includes('official domain email')) {
+      const code = err.code || '';
+      const msg = err.message || '';
+
+      if (msg === DOMAIN_RESTRICTION_ERROR || msg.includes('official domain email')) {
         setError(DOMAIN_RESTRICTION_ERROR);
-      } else if (err.code === 'auth/popup-closed-by-user') {
-        setError('Sign in was cancelled. Please try again.');
+      } else if (code === 'auth/popup-closed-by-user') {
+        setError('Google Sign-In was closed before selecting an account. Please try again.');
+      } else if (code === 'auth/popup-blocked') {
+        setError('Google Sign-In popup was blocked by your browser. Please allow popups for this site.');
+      } else if (code === 'auth/unauthorized-domain') {
+        setError('This domain is not authorized in Firebase Console > Authentication > Settings > Authorized domains.');
+      } else if (
+        code === 'auth/invalid-api-key' ||
+        code === 'auth/api-key-not-valid' ||
+        msg.includes('api-key') ||
+        msg.includes('Placeholder')
+      ) {
+        setError(
+          'Firebase Configuration Notice: Your .env file contains placeholder Firebase keys. To perform live Google sign-in with your real account, add your actual Firebase API keys in .env. In the meantime, use the Verification Lab below to test all scenarios.'
+        );
       } else {
-        setError(err.message || 'An error occurred during authentication.');
+        setError(msg || 'An error occurred during Google authentication.');
       }
       throw err;
     } finally {
@@ -206,23 +213,20 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     clearError();
     setIsAuthenticating(true);
 
-    await new Promise((r) => setTimeout(r, 450));
-
     try {
       const normalizedEmail = email.trim().toLowerCase();
 
       // 1. Strict Domain Validation (Requirements 2 & 3)
       if (!validateHbPlusDomain(normalizedEmail)) {
-        await logAuditEvent(
-          normalizedEmail,
-          'REJECTED_UNAUTHORIZED_DOMAIN',
-          `Access restricted: Domain ${normalizedEmail.split('@')[1] || 'unknown'} is not permitted.`
-        );
         await signOutUser();
         setUser(null);
         setFirebaseUser(null);
         setError(DOMAIN_RESTRICTION_ERROR);
-        await loadAuditHistory();
+        logAuditEvent(
+          normalizedEmail,
+          'REJECTED_UNAUTHORIZED_DOMAIN',
+          `Access restricted: Domain ${normalizedEmail.split('@')[1] || 'unknown'} is not permitted.`
+        ).then(() => loadAuditHistory()).catch(() => {});
         throw new Error(DOMAIN_RESTRICTION_ERROR);
       }
 
@@ -248,15 +252,15 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
         providerId: 'google.com',
       };
 
-      setUser(mockProfile);
       await AsyncStorage.setItem(STORAGE_KEYS.USER_SESSION, JSON.stringify(mockProfile));
-      await logAuditEvent(
+      setUser(mockProfile);
+
+      logAuditEvent(
         mockProfile.email,
         'SUCCESS',
         `Authenticated successfully as ${role.toUpperCase()} (@hbplus.fit)`,
         role
-      );
-      await loadAuditHistory();
+      ).then(() => loadAuditHistory()).catch(() => {});
     } catch (err: any) {
       if (err.message === DOMAIN_RESTRICTION_ERROR) {
         setError(DOMAIN_RESTRICTION_ERROR);
@@ -270,21 +274,33 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   };
 
   /**
-   * Sign out and clear active session
+   * Fast, reliable Sign Out (Immediate state clear, non-blocking network cleanup)
    */
   const signOut = async (): Promise<void> => {
-    setIsAuthenticating(true);
+    setIsLoggingOut(true);
+    setIsAuthenticating(false); // Ensure login button is NEVER in loading state on signout!
     const prevEmail = user?.email || 'authenticated user';
+
     try {
-      await signOutUser();
+      // 1. Clear session immediately so app navigates to LoginScreen instantly
       setUser(null);
       setFirebaseUser(null);
       clearError();
-      await logAuditEvent(prevEmail, 'LOGOUT', 'User signed out. Local tokens and session cleared.');
-      await loadAuditHistory();
+      await AsyncStorage.removeItem(STORAGE_KEYS.USER_SESSION);
+
+      // 2. Clear Firebase Auth session in background without blocking
+      await signOutUser();
+
+      // 3. Log audit event in background
+      logAuditEvent(prevEmail, 'LOGOUT', 'User signed out. Local tokens and session cleared.')
+        .then(() => loadAuditHistory())
+        .catch(() => {});
     } catch (err: any) {
-      console.warn('Sign out error:', err);
+      console.warn('Sign out warning:', err);
+      setUser(null);
+      setFirebaseUser(null);
     } finally {
+      setIsLoggingOut(false);
       setIsAuthenticating(false);
     }
   };
@@ -300,7 +316,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
         setUser(refreshed);
         await AsyncStorage.setItem(STORAGE_KEYS.USER_SESSION, JSON.stringify(refreshed));
       }
-      await loadAuditHistory();
+      loadAuditHistory();
     } catch (e) {
       console.warn('Failed to refresh profile:', e);
     }
@@ -313,6 +329,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
         firebaseUser,
         isLoading,
         isAuthenticating,
+        isLoggingOut,
         error,
         signInWithGoogle,
         simulateGoogleSignIn,

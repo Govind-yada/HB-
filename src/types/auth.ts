@@ -33,6 +33,7 @@ export interface AuthContextType {
   firebaseUser: any | null;
   isLoading: boolean;
   isAuthenticating: boolean;
+  isLoggingOut: boolean;
   error: string | null;
   signInWithGoogle: () => Promise<void>;
   simulateGoogleSignIn: (email: string, displayName?: string, role?: UserRole) => Promise<void>;

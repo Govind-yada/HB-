@@ -1,5 +1,5 @@
 import React from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, Platform } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, Platform, ActivityIndicator } from 'react-native';
 import { colors } from '../../theme/colors';
 import { UserProfile } from '../../types/auth';
 import { Avatar } from '../Avatar';
@@ -9,13 +9,13 @@ import { useResponsive } from '../../hooks/useResponsive';
 interface UserNavMenuProps {
   user: UserProfile;
   onLogoutPress: () => void;
-  isAuthenticating: boolean;
+  isLoggingOut: boolean;
 }
 
 export const UserNavMenu: React.FC<UserNavMenuProps> = ({
   user,
   onLogoutPress,
-  isAuthenticating,
+  isLoggingOut,
 }) => {
   const { isMobile } = useResponsive();
 
@@ -44,15 +44,19 @@ export const UserNavMenu: React.FC<UserNavMenuProps> = ({
 
       <TouchableOpacity
         onPress={onLogoutPress}
-        disabled={isAuthenticating}
+        disabled={isLoggingOut}
         activeOpacity={0.8}
         style={[
           styles.logoutButton,
-          Platform.OS === 'web' && ({ cursor: 'pointer' } as any),
+          isLoggingOut && styles.logoutButtonDisabled,
+          Platform.OS === 'web' && ({ cursor: isLoggingOut ? 'not-allowed' : 'pointer' } as any),
         ]}
       >
+        {isLoggingOut ? (
+          <ActivityIndicator size="small" color="#F87171" style={styles.btnLoader} />
+        ) : null}
         <Text style={styles.logoutButtonText}>
-          {isAuthenticating ? 'Exiting...' : 'Sign Out'}
+          {isLoggingOut ? 'Signing Out...' : 'Sign Out'}
         </Text>
       </TouchableOpacity>
     </View>
@@ -79,6 +83,8 @@ const styles = StyleSheet.create({
     marginTop: 2,
   },
   logoutButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
     backgroundColor: 'rgba(239, 68, 68, 0.15)',
     borderWidth: 1,
     borderColor: 'rgba(239, 68, 68, 0.4)',
@@ -86,6 +92,12 @@ const styles = StyleSheet.create({
     paddingHorizontal: 14,
     borderRadius: 8,
     marginLeft: 6,
+  },
+  logoutButtonDisabled: {
+    opacity: 0.6,
+  },
+  btnLoader: {
+    marginRight: 6,
   },
   logoutButtonText: {
     color: '#F87171',

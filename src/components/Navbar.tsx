@@ -10,7 +10,7 @@ interface NavbarProps {
 }
 
 export const Navbar: React.FC<NavbarProps> = ({ onLogoutPress }) => {
-  const { user, signOut, isAuthenticating } = useAuth();
+  const { user, signOut, isLoggingOut } = useAuth();
 
   const handleLogout = () => {
     if (onLogoutPress) {
@@ -22,16 +22,15 @@ export const Navbar: React.FC<NavbarProps> = ({ onLogoutPress }) => {
 
   return (
     <View style={styles.header}>
-      {/* Modular Brand Logo Mark */}
+      {/* Brand Logo Mark */}
       <BrandLogo />
 
       <View style={styles.actionsContainer}>
         {user ? (
-          /* Modular User Profile Menu & Sign Out */
           <UserNavMenu
             user={user}
             onLogoutPress={handleLogout}
-            isAuthenticating={isAuthenticating}
+            isLoggingOut={isLoggingOut}
           />
         ) : (
           <View style={styles.secureTag}>

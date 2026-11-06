@@ -7,7 +7,7 @@ interface WelcomeBannerProps {
   onRefresh: () => void;
   onSignOut: () => void;
   isRefreshing: boolean;
-  isAuthenticating: boolean;
+  isLoggingOut: boolean;
 }
 
 export const WelcomeBanner: React.FC<WelcomeBannerProps> = ({
@@ -15,7 +15,7 @@ export const WelcomeBanner: React.FC<WelcomeBannerProps> = ({
   onRefresh,
   onSignOut,
   isRefreshing,
-  isAuthenticating,
+  isLoggingOut,
 }) => {
   const firstName = displayName ? displayName.split(' ')[0] : 'Team Member';
 
@@ -50,14 +50,19 @@ export const WelcomeBanner: React.FC<WelcomeBannerProps> = ({
 
         <TouchableOpacity
           onPress={onSignOut}
-          disabled={isAuthenticating}
+          disabled={isLoggingOut}
+          activeOpacity={0.8}
           style={[
             styles.logoutActionButton,
-            Platform.OS === 'web' && ({ cursor: 'pointer' } as any),
+            isLoggingOut && styles.logoutActionDisabled,
+            Platform.OS === 'web' && ({ cursor: isLoggingOut ? 'not-allowed' : 'pointer' } as any),
           ]}
         >
+          {isLoggingOut ? (
+            <ActivityIndicator size="small" color="#F87171" style={styles.btnLoader} />
+          ) : null}
           <Text style={styles.logoutActionText}>
-            {isAuthenticating ? 'Exiting...' : 'Sign Out'}
+            {isLoggingOut ? 'Signing Out...' : 'Sign Out'}
           </Text>
         </TouchableOpacity>
       </View>
@@ -129,12 +134,20 @@ const styles = StyleSheet.create({
     fontSize: 13,
   },
   logoutActionButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
     backgroundColor: 'rgba(239, 68, 68, 0.15)',
     borderWidth: 1,
     borderColor: 'rgba(239, 68, 68, 0.4)',
     paddingVertical: 10,
     paddingHorizontal: 16,
     borderRadius: 8,
+  },
+  logoutActionDisabled: {
+    opacity: 0.6,
+  },
+  btnLoader: {
+    marginRight: 6,
   },
   logoutActionText: {
     color: '#F87171',
