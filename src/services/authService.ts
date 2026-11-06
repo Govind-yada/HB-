@@ -5,6 +5,7 @@ import {
   User as FirebaseUser,
   GoogleAuthProvider,
   signInWithCredential,
+  browserPopupRedirectResolver,
 } from 'firebase/auth';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { auth, googleProvider } from '../config/firebase';
@@ -32,7 +33,6 @@ export function validateHbPlusDomain(email?: string | null): boolean {
 export async function enforceDomainOrSignOut(user: FirebaseUser | { email?: string | null }): Promise<void> {
   const email = user.email || '';
   if (!validateHbPlusDomain(email)) {
-    // Immediately terminate any active session in Firebase and local storage
     try {
       if (auth && typeof auth.signOut === 'function') {
         await firebaseSignOut(auth);
@@ -42,21 +42,21 @@ export async function enforceDomainOrSignOut(user: FirebaseUser | { email?: stri
     }
     await AsyncStorage.removeItem(STORAGE_KEYS.USER_SESSION);
 
-    // Throw the EXACT specified error string (Requirement 3)
     throw new Error(DOMAIN_RESTRICTION_ERROR);
   }
 }
 
 /**
  * Sign in with Google (Web platform)
+ * Uses browserPopupRedirectResolver explicitly to prevent auth/argument-error
  */
 export async function signInWithGoogleWeb(): Promise<UserProfile> {
   if (!auth) {
     throw new Error('Firebase Auth is not initialized.');
   }
 
-  // 1. Trigger Google OAuth popup
-  const userCredential = await signInWithPopup(auth, googleProvider);
+  // 1. Trigger Google OAuth popup with explicit popup resolver
+  const userCredential = await signInWithPopup(auth, googleProvider, browserPopupRedirectResolver);
   const firebaseUser = userCredential.user;
 
   // 2. Strict Domain Validation (Requirements 2 & 3)
@@ -89,10 +89,8 @@ export async function signInWithGoogleNativeCredential(idToken: string, accessTo
   const userCredential = await signInWithCredential(auth, credential);
   const firebaseUser = userCredential.user;
 
-  // Enforce domain check
   await enforceDomainOrSignOut(firebaseUser);
 
-  // Sync profile to Firestore
   const profile = await syncUserProfile(
     firebaseUser.uid,
     firebaseUser.email!,

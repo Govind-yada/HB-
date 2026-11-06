@@ -19,18 +19,19 @@ interface ToastItemProps {
 export const ToastItem: React.FC<ToastItemProps> = ({ toast, onDismiss }) => {
   const opacity = useRef(new Animated.Value(0)).current;
   const translateY = useRef(new Animated.Value(-16)).current;
+  const isNativeDriver = Platform.OS !== 'web';
 
   useEffect(() => {
     Animated.parallel([
       Animated.timing(opacity, {
         toValue: 1,
         duration: 250,
-        useNativeDriver: true,
+        useNativeDriver: isNativeDriver,
       }),
       Animated.timing(translateY, {
         toValue: 0,
         duration: 250,
-        useNativeDriver: true,
+        useNativeDriver: isNativeDriver,
       }),
     ]).start();
 
@@ -39,12 +40,12 @@ export const ToastItem: React.FC<ToastItemProps> = ({ toast, onDismiss }) => {
         Animated.timing(opacity, {
           toValue: 0,
           duration: 200,
-          useNativeDriver: true,
+          useNativeDriver: isNativeDriver,
         }),
         Animated.timing(translateY, {
           toValue: -16,
           duration: 200,
-          useNativeDriver: true,
+          useNativeDriver: isNativeDriver,
         }),
       ]).start(() => {
         onDismiss(toast.id);

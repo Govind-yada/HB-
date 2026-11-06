@@ -5,6 +5,7 @@ import {
   Auth,
   GoogleAuthProvider,
   browserLocalPersistence,
+  browserPopupRedirectResolver,
 } from 'firebase/auth';
 import { getFirestore, Firestore } from 'firebase/firestore';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -22,12 +23,13 @@ try {
     app = getApp();
   }
 
-  // Cross-platform authentication persistence configuration
+  // Cross-platform authentication persistence & popup resolver configuration
   if (Platform.OS === 'web') {
-    // Web: browser local persistence
+    // Web: initialize with browser local persistence AND explicit browserPopupRedirectResolver
     try {
       auth = initializeAuth(app, {
         persistence: [browserLocalPersistence],
+        popupRedirectResolver: browserPopupRedirectResolver,
       });
     } catch {
       auth = getAuth(app);
@@ -35,12 +37,14 @@ try {
   } else {
     // Native (Android / iOS): Secure AsyncStorage persistence
     try {
-      // Dynamically load React Native persistence module for native platforms
-      // eslint-disable-next-line @typescript-eslint/no-var-requires
-      const { getReactNativePersistence } = require('@firebase/auth/dist/rn/index.js');
-      auth = initializeAuth(app, {
-        persistence: getReactNativePersistence(AsyncStorage),
-      });
+      const authModule = require('@firebase/auth');
+      if (typeof authModule.getReactNativePersistence === 'function') {
+        auth = initializeAuth(app, {
+          persistence: authModule.getReactNativePersistence(AsyncStorage),
+        });
+      } else {
+        auth = getAuth(app);
+      }
     } catch {
       auth = getAuth(app);
     }
@@ -67,4 +71,4 @@ googleProvider.setCustomParameters({
   hd: 'hbplus.fit', // Hint to Google OAuth to prefer/highlight hbplus.fit accounts
 });
 
-export { app, auth, db, googleProvider };
+export { app, auth, db, googleProvider, browserPopupRedirectResolver };
