@@ -10,19 +10,22 @@ import {
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { auth, googleProvider } from '../config/firebase';
 import { ALLOWED_DOMAIN, DOMAIN_RESTRICTION_ERROR, STORAGE_KEYS } from '../config/constants';
+import { configuredAllowedDomain, oauthConfig } from '../config/env';
 import { syncUserProfile } from './firestoreService';
 import { UserProfile } from '../types/auth';
 
 /**
  * Domain validation check:
- * Returns true exclusively if email ends with @hbplus.fit
+ * Returns true exclusively if email ends with the allowed domain (@hbplus.fit)
  */
 export function validateHbPlusDomain(email?: string | null): boolean {
   if (!email || typeof email !== 'string') {
     return false;
   }
   const normalized = email.trim().toLowerCase();
-  return normalized.endsWith(ALLOWED_DOMAIN.toLowerCase());
+  const rawTarget = (configuredAllowedDomain || ALLOWED_DOMAIN).trim().toLowerCase();
+  const targetDomain = rawTarget.startsWith('@') ? rawTarget : `@${rawTarget}`;
+  return normalized.endsWith(targetDomain);
 }
 
 /**
@@ -101,6 +104,29 @@ export async function signInWithGoogleNativeCredential(idToken: string, accessTo
 
   await AsyncStorage.setItem(STORAGE_KEYS.USER_SESSION, JSON.stringify(profile));
   return profile;
+}
+
+/**
+ * Unified Cross-Platform Google Sign-In
+ * Detects runtime platform:
+ * - On Web: triggers browserPopupRedirectResolver with GoogleAuthProvider popup.
+ * - On Native (Android / iOS): enforces native client ID prerequisites or credentials.
+ */
+export async function signInWithGoogle(): Promise<UserProfile> {
+  if (Platform.OS === 'web') {
+    return signInWithGoogleWeb();
+  }
+
+  // Native Mobile (Android / iOS)
+  if (!oauthConfig.androidClientId && !oauthConfig.iosClientId) {
+    throw new Error(
+      'Native Google OAuth requires EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID or EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID in your environment variables. Alternatively, you can use the Verification Lab to test domain verification directly.'
+    );
+  }
+
+  throw new Error(
+    'Native Google OAuth session must be initiated with your configured client ID and exchanged via signInWithGoogleNativeCredential.'
+  );
 }
 
 /**

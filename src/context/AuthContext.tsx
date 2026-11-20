@@ -8,11 +8,12 @@ import {
   DOMAIN_RESTRICTION_ERROR,
   STORAGE_KEYS,
 } from '../config/constants';
-import { isConfiguredWithRealFirebase, configuredAdminEmails } from '../config/env';
+import { isConfiguredWithRealFirebase, configuredAdminEmails, configuredAllowedDomain } from '../config/env';
 import {
   validateHbPlusDomain,
   enforceDomainOrSignOut,
   signInWithGoogleWeb,
+  signInWithGoogle as authServiceSignInWithGoogle,
   signOutUser,
 } from '../services/authService';
 import {
@@ -165,10 +166,10 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     setIsAuthenticating(true);
 
     try {
-      // Direct call to Google OAuth popup
-      const profile = await signInWithGoogleWeb();
+      // Cross-platform Google OAuth flow (Web popup or native authentication)
+      const profile = await authServiceSignInWithGoogle();
       setUser(profile);
-      logAuditEvent(profile.email, 'SUCCESS', 'Signed in via Google OAuth 2.0 Web popup', profile.role)
+      logAuditEvent(profile.email, 'SUCCESS', `Signed in via Google OAuth 2.0 (${Platform.OS})`, profile.role)
         .then(() => loadAuditHistory())
         .catch(() => {});
     } catch (err: any) {

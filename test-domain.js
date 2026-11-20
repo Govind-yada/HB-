@@ -1,12 +1,14 @@
-const ALLOWED_DOMAIN = '@hbplus.fit';
+const ALLOWED_DOMAIN = process.env.EXPO_PUBLIC_ALLOWED_DOMAIN || '@hbplus.fit';
 const DOMAIN_RESTRICTION_ERROR = 'Access restricted. Please login using your official domain email.';
 
-function validateHbPlusDomain(email) {
+function validateHbPlusDomain(email, configuredDomain = ALLOWED_DOMAIN) {
   if (!email || typeof email !== 'string') {
     return false;
   }
   const normalized = email.trim().toLowerCase();
-  return normalized.endsWith(ALLOWED_DOMAIN.toLowerCase());
+  const rawTarget = (configuredDomain || '@hbplus.fit').trim().toLowerCase();
+  const targetDomain = rawTarget.startsWith('@') ? rawTarget : `@${rawTarget}`;
+  return normalized.endsWith(targetDomain);
 }
 
 async function enforceDomainOrSignOut(user) {
